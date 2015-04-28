@@ -1,5 +1,0 @@
-NAMECOIND_SERVER = '174.129.223.66'  
-NAMECOIND_PORT = 8332
-NAMECOIND_USER = 'opennamesystem'
-NAMECOIND_PASSWD = 'opennamesystem'
-USE_HTTPS = False
