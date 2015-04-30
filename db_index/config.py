@@ -12,3 +12,5 @@ try:
 except:
     print "AWS credentials not found"
     AWS_ACCESS_KEY = AWS_ACCESS_KEY_SECRET = None
+
+from config_local import NAMECOIND_SERVER, NAMECOIND_PORT, NAMECOIND_USER, NAMECOIND_PASSWD, USE_HTTPS

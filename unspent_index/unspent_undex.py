@@ -120,3 +120,34 @@ for block_num in range(start_block_num, end_block_num + 1):
             process_transaction(tx)
             # print "# ----------------------------"
         print "\n\n"
+
+V-OUT 
+
+{
+            "value" : 39.87800000,
+            "n" : 0,
+            "scriptPubKey" : {
+                "asm" : "046adb3ef932411649bd25a0dac786ba5f9011b6d69ea8b3d8a21d2b8e6e8cc06fe97439ec208fec557a1e17c01bb149edad182fa15729e882be2493785a9e2398 OP_CHECKSIG",
+                "hex" : "41046adb3ef932411649bd25a0dac786ba5f9011b6d69ea8b3d8a21d2b8e6e8cc06fe97439ec208fec557a1e17c01bb149edad182fa15729e882be2493785a9e2398ac",
+                "reqSigs" : 1,
+                "type" : "pubkeyhash",
+                "addresses" : [
+                    "NGHMJ4ZhRtuCTWPaWPxgbCv3fQb8h2gX6M"
+                ]
+            }
+        }
+
+
+
+V-IN 
+
+ {
+            "txid" : "bae7839e227bcdaeae152a13bb7f9c2f75b4e51c584c5cce1093488235cfb241",
+            "vout" : 0,
+            "scriptSig" : {
+                "asm" : "3045022006327e6fb32c62b1e0aec0c4d5183df0f1919dc4e5891edf15b40e9cdce28857022100aaf10eed82e5a550edee11e9af0383d4352d2dc6058e09d3ca3cca813dfd9dcc01",
+                "hex" : "483045022006327e6fb32c62b1e0aec0c4d5183df0f1919dc4e5891edf15b40e9cdce28857022100aaf10eed82e5a550edee11e9af0383d4352d2dc6058e09d3ca3cca813dfd9dcc01"
+            },
+            "value" : 39.87800000,
+            "sequence" : 4294967295
+        }
