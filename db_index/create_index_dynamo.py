@@ -15,28 +15,37 @@ from boto.dynamodb2.table import Table
 nmc_blocks = Table('nmc_blocks')
 nmc_tx = Table('nmc_tx')
 
-# -----------------------------------
-if __name__ == '__main__':
+from config import NAMECOIND_SERVER, NAMECOIND_PORT, NAMECOIND_USER, NAMECOIND_PASSWD, USE_HTTPS
 
-    namecoind = NamecoindServer(NAMECOIND_SERVER, NAMECOIND_PORT, NAMECOIND_USER, NAMECOIND_PASSWD, USE_HTTPS)
+namecoind = NamecoindServer(NAMECOIND_SERVER, NAMECOIND_PORT, NAMECOIND_USER, NAMECOIND_PASSWD, USE_HTTPS)
+
+from pprint import pprint
+
+# to silence boto log messages
+#import logging
+#logging.getLogger('boto').setLevel(logging.CRITICAL)
+
+from commontools import pretty_print
+
+
+# -----------------------------------
+def write_blocks_and_tx():
 
     start_block_num, end_block_num = 1, namecoind.getblockcount()
 
     error_blocks = []
     error_tx = []
 
-    # start_block_num, end_block_num = 100000, 100050
+    start_block_num, end_block_num = 1, 100
     for block_num in range(start_block_num, end_block_num + 1):
 
         print "Procesing block %d" % block_num
-        #block_hash = namecoind.getblockhash(block_num)
         block = namecoind.getblockbycount(block_num)
 
         block_entry = {}
 
         block_entry['block_num'] = block_num
-        if 'tx' in block:
-            block_entry['block_data'] = block
+        block_entry['block_data'] = block
 
         #insert in DynamoDB
         try:
@@ -44,11 +53,13 @@ if __name__ == '__main__':
         except:
             error_blocks.append(block_num)
 
+        mongo_blocks.insert(block_entry)
+
         if 'tx' in block:
             txs = block['tx']
-            print "Found %d transactions" % len(txs)
+            #print "Found %d transactions" % len(txs)
             for tx in txs:
-                print "Transaction ID: " + tx
+                #print "Transaction ID: " + tx
 
                 raw_tx = namecoind.getrawtransaction(tx)
                 tx_data = namecoind.decoderawtransaction(raw_tx)
@@ -58,10 +69,17 @@ if __name__ == '__main__':
                 tx_entry['tx_data'] = tx_data
 
                 #insert in DynamoDB
-        try:
+                try:
                     nmc_tx.put_item(tx_entry)
-        except:
-                        error_tx.append(tx)
+                except:
+                    error_tx.append(tx)
+                mongo_tx.insert(tx_entry)
 
+    print '-' * 10
     print error_blocks
     print error_tx
+
+# -----------------------------------
+if __name__ == '__main__':
+
+    write_blocks_and_tx()
