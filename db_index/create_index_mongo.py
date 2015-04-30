@@ -28,11 +28,13 @@ mongo_tx = db.tx
 #outputs are a superset of utxo (unspent outputs)
 mongo_utxo = db.utxo
 mongo_inputs = db.inputs
+mongo_address_utxo = db.address_utxo
 
 mongo_blocks.ensure_index('block_num')
 mongo_tx.ensure_index('tx_hash')
 mongo_utxo.ensure_index('id')
 mongo_inputs.ensure_index('id')
+mongo_address_utxo.ensure_index('address')
 
 
 # -----------------------------------
@@ -44,17 +46,70 @@ class DecimalEncoder(json.JSONEncoder):
 
 
 # -----------------------------------
+def get_address_from_output(output):
+
+    recipient_address = None 
+
+    if 'scriptPubKey' in output:
+        scriptPubKey = output['scriptPubKey']
+
+        if 'addresses' in scriptPubKey:
+            recipient_address = scriptPubKey['addresses'][0]
+
+    return recipient_address
+
+
+# -----------------------------------
+def add_utxo_to_address(output):
+
+    id = output['id']
+    output = output['data']
+
+    output_value = output['value']
+
+    recipient_address = get_address_from_output(output)
+
+    #if this address appears for the first time, add a new object in mongodb;
+    #else update it
+    if output_value is not None and recipient_address is not None:
+        exist = mongo_address_utxo.find_one({'address': recipient_address})
+
+        if exist is None:
+            entry = {}
+            entry['address'] = recipient_address
+            utxos = []
+            utxos.append(id)
+            entry['utxos'] = utxos
+            mongo_address_utxo.insert(entry)
+        else:
+            entry = exist
+            if id not in entry['utxos']:
+                entry['utxos'].append(id)
+            mongo_address_utxo.save(entry)
+
+
+# -----------------------------------
 def spend_utxo(id):
 
     input = mongo_inputs.find_one({"id": id})
 
     if input is not None:
+
+        output = mongo_utxo.find_one({"id": id})
+        recipient_address = get_address_from_output(output['data'])
+
+        entry = mongo_address_utxo.find_one({"address": recipient_address})
+        try:
+            entry['utxos'].remove(output['id'])
+            mongo_address_utxo.save(entry)
+        except:
+            print output['id'] + " not in address index"
+
         print "Spending UTXO: " + id
         mongo_utxo.remove({"id": id})
     else:
         print "UTXO still unspent"
         #print id
-
 
 # -----------------------------------
 def save_block(block_num):
@@ -136,6 +191,7 @@ def process_block(block_num):
                     new_output['data'] = output
 
                     mongo_utxo.insert(new_output)
+                    add_utxo_to_address(new_output)
 
 
 # -----------------------------------
@@ -156,10 +212,34 @@ def check_all_utxo():
 
         spend_utxo(utxo)
 
+
+# -----------------------------------
+def get_unspents(address):
+
+    reply = {}
+    reply['unspent_outputs'] = []
+
+    entry = mongo_address_utxo.find_one({"address": address})
+
+    if entry is not None:
+        for id in entry['utxos']:
+            new_entry = {}
+            new_entry['txid'] = id.rsplit('_')[0]
+            new_entry['vout'] = id.rsplit('_')[1]
+            utxo = mongo_utxo.find_one({'id': id})
+
+            new_entry['scriptPubKey'] = utxo['data']['scriptPubKey']
+            new_entry['amount'] = utxo['data']['value']
+            reply['unspent_outputs'].append(new_entry)
+
+    return reply
+
 # -----------------------------------
 if __name__ == '__main__':
 
     #process_blocks_from_beginning()
-    check_all_utxo()
+    #check_all_utxo()
     #write_unspents()
     #spend_utxo()
+
+    pprint(get_unspents('N6xwxpamTpbKn3QA8PfttVB9rRkKkHBcZy'))
