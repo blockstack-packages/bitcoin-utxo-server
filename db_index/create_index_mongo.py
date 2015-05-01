@@ -29,12 +29,14 @@ mongo_tx = db.tx
 mongo_utxo = db.utxo
 mongo_inputs = db.inputs
 mongo_address_utxo = db.address_utxo
+mongo_address_to_keys = db.address_to_keys
 
 mongo_blocks.ensure_index('block_num')
 mongo_tx.ensure_index('tx_hash')
 mongo_utxo.ensure_index('id')
 mongo_inputs.ensure_index('id')
 mongo_address_utxo.ensure_index('address')
+mongo_address_to_keys.ensure_index('address')
 
 
 # -----------------------------------
@@ -48,7 +50,7 @@ class DecimalEncoder(json.JSONEncoder):
 # -----------------------------------
 def get_address_from_output(output):
 
-    recipient_address = None 
+    recipient_address = None
 
     if 'scriptPubKey' in output:
         scriptPubKey = output['scriptPubKey']
@@ -105,11 +107,12 @@ def spend_utxo(id):
         except:
             print output['id'] + " not in address index"
 
-        print "Spending UTXO: " + id
+        #print "Spending UTXO: " + id
         mongo_utxo.remove({"id": id})
     else:
         print "UTXO still unspent"
         #print id
+
 
 # -----------------------------------
 def save_block(block_num):
@@ -198,10 +201,10 @@ def process_block(block_num):
 def process_blocks_from_beginning():
 
     #start_block_num, end_block_num = 1, namecoind.getblockcount()
-    start_block_num, end_block_num = 1, 1000
+    start_block_num, end_block_num = 1, 228718
 
     for block_num in range(start_block_num, end_block_num + 1):
-        save_block(block_num)
+        #save_block(block_num)
         process_block(block_num)
 
 
@@ -210,7 +213,7 @@ def check_all_utxo():
 
     for utxo in mongo_utxo.find():
 
-        spend_utxo(utxo)
+        spend_utxo(utxo['id'])
 
 
 # -----------------------------------
@@ -234,12 +237,46 @@ def get_unspents(address):
 
     return reply
 
+
+# -----------------------------------
+def create_address_to_keys_index():
+
+    reply = namecoind.name_filter('u/')
+
+    for user in reply:
+
+        key = user['name']
+        data = namecoind.name_show(user['name'])
+
+        owner_address = data['address']
+
+        print key
+        print owner_address
+        print '-' * 5
+
+        exist = mongo_address_to_keys.find_one({'address': owner_address})
+
+        if exist is None:
+            entry = {}
+            entry['address'] = owner_address
+            keys = []
+            keys.append(user['name'])
+            entry['keys'] = keys
+            mongo_address_to_keys.insert(entry)
+        else:
+            entry = exist
+            if key not in entry['keys']:
+                entry['keys'].append(key)
+            mongo_address_to_keys.save(entry)
+
 # -----------------------------------
 if __name__ == '__main__':
 
     #process_blocks_from_beginning()
     #check_all_utxo()
     #write_unspents()
-    #spend_utxo()
+    #check_all_utxo()
 
-    pprint(get_unspents('N6xwxpamTpbKn3QA8PfttVB9rRkKkHBcZy'))
+    #pprint(get_unspents('N6xwxpamTpbKn3QA8PfttVB9rRkKkHBcZy'))
+
+    create_address_to_keys_index()
