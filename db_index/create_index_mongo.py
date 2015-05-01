@@ -105,11 +105,12 @@ def spend_utxo(id):
         except:
             print output['id'] + " not in address index"
 
-        print "Spending UTXO: " + id
+        #print "Spending UTXO: " + id
         mongo_utxo.remove({"id": id})
     else:
         print "UTXO still unspent"
         #print id
+
 
 # -----------------------------------
 def save_block(block_num):
@@ -198,10 +199,10 @@ def process_block(block_num):
 def process_blocks_from_beginning():
 
     #start_block_num, end_block_num = 1, namecoind.getblockcount()
-    start_block_num, end_block_num = 1, 1000
+    start_block_num, end_block_num = 1, 228718
 
     for block_num in range(start_block_num, end_block_num + 1):
-        save_block(block_num)
+        #save_block(block_num)
         process_block(block_num)
 
 
@@ -210,7 +211,7 @@ def check_all_utxo():
 
     for utxo in mongo_utxo.find():
 
-        spend_utxo(utxo)
+        spend_utxo(utxo['id'])
 
 
 # -----------------------------------
@@ -240,6 +241,6 @@ if __name__ == '__main__':
     #process_blocks_from_beginning()
     #check_all_utxo()
     #write_unspents()
-    #spend_utxo()
+    #check_all_utxo()
 
-    pprint(get_unspents('N6xwxpamTpbKn3QA8PfttVB9rRkKkHBcZy'))
+    #pprint(get_unspents('N6xwxpamTpbKn3QA8PfttVB9rRkKkHBcZy'))
