@@ -93,14 +93,20 @@ def add_utxo_to_address(output):
 # -----------------------------------
 def spend_utxo(id):
 
-    input = mongo_inputs.find_one({"id": id})
+    input = mongo_inputs.find({"id": id}).limit(1)
 
     if input is not None:
 
         output = mongo_utxo.find_one({"id": id})
-        recipient_address = get_address_from_output(output['data'])
+
+        if output is not None and 'data' in output:
+            recipient_address = get_address_from_output(output['data'])
+        else:
+            print "no data in output: " + id
+            recipient_address = None
 
         entry = mongo_address_utxo.find_one({"address": recipient_address})
+
         try:
             entry['utxos'].remove(output['id'])
             mongo_address_utxo.save(entry)
