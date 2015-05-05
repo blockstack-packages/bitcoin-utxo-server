@@ -95,28 +95,30 @@ def spend_utxo(id):
 
     input = mongo_inputs.find({"id": id}).limit(1)
 
+    print "processing: " + id
+
     if input is not None:
 
         output = mongo_utxo.find_one({"id": id})
-
         if output is not None and 'data' in output:
-            recipient_address = get_address_from_output(output['data'])
+                recipient_address = get_address_from_output(output['data'])
+
         else:
-            print "no data in output: " + id
-            recipient_address = None
+                print "no data in output: " + str(id)
+                print output
+                recipient_address = None
 
         entry = mongo_address_utxo.find_one({"address": recipient_address})
-
         try:
             entry['utxos'].remove(output['id'])
             mongo_address_utxo.save(entry)
         except:
-            print output['id'] + " not in address index"
+            print id + " not in address index"
 
-        #print "Spending UTXO: " + id
+        print "Spending UTXO: " + id
         mongo_utxo.remove({"id": id})
     else:
-        print "UTXO still unspent"
+        print "UTXO still unspent: " + str(id)
         #print id
 
 
@@ -275,6 +277,7 @@ def create_address_to_keys_index():
                 entry['keys'].append(key)
             mongo_address_to_keys.save(entry)
 
+
 # -----------------------------------
 if __name__ == '__main__':
 
@@ -285,4 +288,5 @@ if __name__ == '__main__':
 
     #pprint(get_unspents('N6xwxpamTpbKn3QA8PfttVB9rRkKkHBcZy'))
 
-    create_address_to_keys_index()
+    #create_address_to_keys_index()
+    check_all_utxo()
