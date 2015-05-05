@@ -22,21 +22,21 @@ c = MongoClient()
 
 # ------------------------------------
 db = c['namecoin_index']
-mongo_blocks = db.blocks
-mongo_tx = db.tx
+blocks_index = db.blocks
+tx_index = db.tx
 
 #outputs are a superset of utxo (unspent outputs)
-mongo_utxo = db.utxo
-mongo_inputs = db.inputs
-mongo_address_utxo = db.address_utxo
-mongo_address_to_keys = db.address_to_keys
+utxo_index = db.utxo
+inputs_index = db.inputs
+address_to_utxo = db.address_to_utxo
+address_to_keys = db.address_to_keys
 
-mongo_blocks.ensure_index('block_num')
-mongo_tx.ensure_index('tx_hash')
-mongo_utxo.ensure_index('id')
-mongo_inputs.ensure_index('id')
-mongo_address_utxo.ensure_index('address')
-mongo_address_to_keys.ensure_index('address')
+blocks_index.ensure_index('block_num')
+tx_index.ensure_index('tx_hash')
+utxo_index.ensure_index('id')
+inputs_index.ensure_index('id')
+address_to_utxo.ensure_index('address')
+address_to_keys.ensure_index('address')
 
 
 # -----------------------------------
@@ -74,7 +74,7 @@ def add_utxo_to_address(output):
     #if this address appears for the first time, add a new object in mongodb;
     #else update it
     if output_value is not None and recipient_address is not None:
-        exist = mongo_address_utxo.find_one({'address': recipient_address})
+        exist = address_to_utxo.find_one({'address': recipient_address})
 
         if exist is None:
             entry = {}
@@ -82,24 +82,24 @@ def add_utxo_to_address(output):
             utxos = []
             utxos.append(id)
             entry['utxos'] = utxos
-            mongo_address_utxo.insert(entry)
+            address_to_utxo.insert(entry)
         else:
             entry = exist
             if id not in entry['utxos']:
                 entry['utxos'].append(id)
-            mongo_address_utxo.save(entry)
+            address_to_utxo.save(entry)
 
 
 # -----------------------------------
 def spend_utxo(id):
 
-    input = mongo_inputs.find({"id": id}).limit(1)
+    input = inputs_index.find({"id": id}).limit(1)
 
     print "processing: " + id
 
     if input is not None:
 
-        output = mongo_utxo.find_one({"id": id})
+        output = utxo_index.find_one({"id": id})
         if output is not None and 'data' in output:
                 recipient_address = get_address_from_output(output['data'])
 
@@ -108,15 +108,15 @@ def spend_utxo(id):
                 print output
                 recipient_address = None
 
-        entry = mongo_address_utxo.find_one({"address": recipient_address})
+        entry = address_to_utxo.find_one({"address": recipient_address})
         try:
             entry['utxos'].remove(output['id'])
-            mongo_address_utxo.save(entry)
+            address_to_utxo.save(entry)
         except:
             print id + " not in address index"
 
         print "Spending UTXO: " + id
-        mongo_utxo.remove({"id": id})
+        utxo_index.remove({"id": id})
     else:
         print "UTXO still unspent: " + str(id)
         #print id
@@ -135,7 +135,7 @@ def save_block(block_num):
 
     block_entry = json.loads(json.dumps(block_entry, cls=DecimalEncoder))
 
-    mongo_blocks.insert(block_entry)
+    blocks_index.insert(block_entry)
 
     if 'tx' in block:
         txs = block['tx']
@@ -152,7 +152,50 @@ def save_block(block_num):
 
             tx_entry = json.loads(json.dumps(tx_entry, cls=DecimalEncoder))
 
-            mongo_tx.insert(tx_entry)
+            tx_index.insert(tx_entry)
+
+
+# -----------------------------------
+def process_input(tx_data):
+
+    if 'vin' in tx_data:
+
+        for input in tx_data['vin']:
+
+            if 'txid' in input:
+                id = input['txid'] + '_' + str(input['vout'])
+
+                check_input = inputs_index.find({"id": id}).limit(1)
+
+                if check_input.count() == 0:
+
+                    new_input = {}
+                    new_input['id'] = id
+
+                    print "inserting input: " + id
+                    inputs_index.insert(new_input)
+
+
+# -----------------------------------
+def process_output(tx_data, tx_hash):
+
+    if 'vout' in tx_data:
+
+        for output in tx_data['vout']:
+
+            id = tx_hash + '_' + str(output['n'])
+
+            check_input = inputs_index.find({"id": id}).limit(1)
+
+            #if this output is not already spent
+            if check_input.count() == 0:
+
+                new_output = {}
+                new_output['id'] = id
+                new_output['data'] = output
+
+                print "inserting output: " + id
+                utxo_index.insert(new_output)
 
 
 # -----------------------------------
@@ -161,7 +204,7 @@ def process_block(block_num):
     '''
 
     print "Procesing block %d" % block_num
-    block = mongo_blocks.find_one({'block_num': block_num})
+    block = blocks_index.find_one({'block_num': block_num})
 
     block_data = block['block_data']
 
@@ -170,39 +213,12 @@ def process_block(block_num):
 
         for tx in txs:
             tx_hash = tx
-            tx = mongo_tx.find_one({'tx_hash': tx_hash})
+            tx = tx_index.find_one({'tx_hash': tx_hash})
 
             tx_data = tx['tx_data']
 
-            if 'vin' in tx_data:
-
-                for input in tx_data['vin']:
-
-                    if 'txid' in input:
-                        id = input['txid'] + '_' + str(input['vout'])
-
-                        new_input = {}
-
-                        new_input['id'] = id
-                        new_input['data'] = input
-
-                        mongo_inputs.insert(new_input)
-
-                        # spend the output
-                        spend_utxo(id)
-
-            if 'vout' in tx_data:
-
-                for output in tx_data['vout']:
-
-                    id = tx_hash + '_' + str(output['n'])
-
-                    new_output = {}
-                    new_output['id'] = id
-                    new_output['data'] = output
-
-                    mongo_utxo.insert(new_output)
-                    add_utxo_to_address(new_output)
+            process_inputs(tx_data)
+            process_outputs(tx_data, tx_hash)
 
 
 # -----------------------------------
@@ -219,7 +235,7 @@ def process_blocks_from_beginning():
 # -----------------------------------
 def check_all_utxo():
 
-    for utxo in mongo_utxo.find():
+    for utxo in utxo_index.find():
 
         spend_utxo(utxo['id'])
 
@@ -230,14 +246,14 @@ def get_unspents(address):
     reply = {}
     reply['unspent_outputs'] = []
 
-    entry = mongo_address_utxo.find_one({"address": address})
+    entry = address_to_utxo.find_one({"address": address})
 
     if entry is not None:
         for id in entry['utxos']:
             new_entry = {}
             new_entry['txid'] = id.rsplit('_')[0]
             new_entry['vout'] = id.rsplit('_')[1]
-            utxo = mongo_utxo.find_one({'id': id})
+            utxo = utxo_index.find_one({'id': id})
 
             new_entry['scriptPubKey'] = utxo['data']['scriptPubKey']
             new_entry['amount'] = utxo['data']['value']
@@ -262,7 +278,7 @@ def create_address_to_keys_index():
         print owner_address
         print '-' * 5
 
-        exist = mongo_address_to_keys.find_one({'address': owner_address})
+        exist = address_to_keys.find_one({'address': owner_address})
 
         if exist is None:
             entry = {}
@@ -270,18 +286,18 @@ def create_address_to_keys_index():
             keys = []
             keys.append(user['name'])
             entry['keys'] = keys
-            mongo_address_to_keys.insert(entry)
+            address_to_keys.insert(entry)
         else:
             entry = exist
             if key not in entry['keys']:
                 entry['keys'].append(key)
-            mongo_address_to_keys.save(entry)
+            address_to_keys.save(entry)
 
 
 # -----------------------------------
 if __name__ == '__main__':
 
-    #process_blocks_from_beginning()
+    process_blocks_from_beginning()
     #check_all_utxo()
     #write_unspents()
     #check_all_utxo()
@@ -289,4 +305,4 @@ if __name__ == '__main__':
     #pprint(get_unspents('N6xwxpamTpbKn3QA8PfttVB9rRkKkHBcZy'))
 
     #create_address_to_keys_index()
-    check_all_utxo()
+    #check_all_utxo()

@@ -22,14 +22,14 @@ c = MongoClient()
 
 # ------------------------------------
 db = c['namecoin_index']
-mongo_blocks = db.blocks
-mongo_tx = db.tx
+blocks_index = db.blocks
+tx_index = db.tx
 
 #outputs are a superset of utxo (unspent outputs)
-mongo_utxo = db.utxo
-mongo_inputs = db.inputs
-mongo_address_utxo = db.address_utxo
-mongo_address_to_keys = db.address_to_keys
+utxo_index = db.utxo
+inputs_index = db.inputs
+address_to_utxo = db.address_to_utxo
+address_to_keys = db.address_to_keys
 
 
 # -----------------------------------
@@ -59,7 +59,7 @@ def test_blocks(start_block_num, end_block_num):
 
     for block_num in range(start_block_num, end_block_num + 1):
 
-        if mongo_blocks.find({"block_num": block_num}).limit(1) is not None:
+        if blocks_index.find({"block_num": block_num}).limit(1).count() == 1:
             print "check: " + str(block_num)
         else:
             print "error: " + str(block_num)
@@ -75,7 +75,7 @@ def test_index_data():
 
     for block_num in range(start_block_num, end_block_num + 1):
 
-        block = mongo_blocks.find_one({"block_num": block_num})
+        block = blocks_index.find_one({"block_num": block_num})
 
         block_data = block['block_data']
 
@@ -85,7 +85,7 @@ def test_index_data():
             if 'tx' in block_data:
                 for tx in block_data['tx']:
                     tx_hash = tx
-                    check_tx = mongo_tx.find_one({'tx_hash': tx_hash})
+                    check_tx = tx_index.find_one({'tx_hash': tx_hash})
                     tx_data = check_tx['tx_data']
 
                     if 'vout' in tx_data:
@@ -94,11 +94,11 @@ def test_index_data():
 
                             id = tx_hash + '_' + str(output['n'])
 
-                            check_spent = mongo_inputs.find({"id": id}).limit(1)
+                            check_input = inputs_index.find({"id": id}).limit(1)
 
-                            if check_spent is None:
+                            if check_input.count() == 0:
                                 print "found unspent: " + id
-                            
+
         else:
             print "error: empty block" + str(block_num)
             exit(0)
