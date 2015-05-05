@@ -59,7 +59,7 @@ def test_blocks(start_block_num, end_block_num):
 
     for block_num in range(start_block_num, end_block_num + 1):
 
-        if blocks_index.find({"block_num": block_num}).limit(1) is not None:
+        if blocks_index.find({"block_num": block_num}).limit(1).count() == 1:
             print "check: " + str(block_num)
         else:
             print "error: " + str(block_num)
@@ -94,11 +94,11 @@ def test_index_data():
 
                             id = tx_hash + '_' + str(output['n'])
 
-                            check_spent = inputs_index.find({"id": id}).limit(1)
+                            check_input = inputs_index.find({"id": id}).limit(1)
 
-                            if check_spent is None:
+                            if check_input.count() == 0:
                                 print "found unspent: " + id
-                            
+
         else:
             print "error: empty block" + str(block_num)
             exit(0)
