@@ -18,10 +18,12 @@ from pprint import pprint
 from commontools import pretty_print
 
 from pymongo import MongoClient
-c = MongoClient()
 
 # ------------------------------------
-db = c['namecoin_index']
+
+from config import INDEX_DB_URI
+
+db = MongoClient(INDEX_DB_URI)['namecoin_index']
 blocks_index = db.blocks
 tx_index = db.tx
 
@@ -29,6 +31,7 @@ tx_index = db.tx
 utxo_index = db.utxo
 inputs_index = db.inputs
 address_to_utxo = db.address_to_utxo
+address_to_utxo_temp = db.address_to_utxo_temp
 address_to_keys = db.address_to_keys
 
 blocks_index.ensure_index('block_num')
@@ -36,8 +39,13 @@ tx_index.ensure_index('tx_hash')
 utxo_index.ensure_index('id')
 inputs_index.ensure_index('id')
 address_to_utxo.ensure_index('address')
+address_to_utxo_temp.ensure_index('address')
 address_to_keys.ensure_index('address')
 
+import pylibmc
+
+from config import MEMCACHED_SERVERS
+mc = pylibmc.Client(MEMCACHED_SERVERS, binary=True)
 
 # -----------------------------------
 class DecimalEncoder(json.JSONEncoder):
@@ -71,24 +79,32 @@ def add_utxo_to_address(output):
 
     recipient_address = get_address_from_output(output)
 
-    #if this address appears for the first time, add a new object in mongodb;
-    #else update it
     if output_value is not None and recipient_address is not None:
-        exist = address_to_utxo.find_one({'address': recipient_address})
 
-        if exist is None:
-            entry = {}
-            entry['address'] = recipient_address
+        entry = {}
+
+        entry['utxo'] = id
+        entry['address'] = recipient_address
+        address_to_utxo_temp.insert(entry)
+
+        '''
+        check_address = mc.get(recipient_address)
+
+        if check_address is None:
+
+            #print "not found"
+
             utxos = []
             utxos.append(id)
-            entry['utxos'] = utxos
-            address_to_utxo.insert(entry)
+          
+            mc.set(recipient_address, utxos, 0)
         else:
-            entry = exist
-            if id not in entry['utxos']:
-                entry['utxos'].append(id)
-            address_to_utxo.save(entry)
 
+            utxos = mc.get(recipient_address)
+
+            utxos.append(id)
+            mc.set(recipient_address, utxos, 0)
+        '''
 
 # -----------------------------------
 def spend_utxo(id):
@@ -97,18 +113,21 @@ def spend_utxo(id):
 
     print "processing: " + id
 
-    if input is not None:
+    if input.count() != 0:
 
+        print "UTXO should be removed"
+
+        '''
         output = utxo_index.find_one({"id": id})
         if output is not None and 'data' in output:
-                recipient_address = get_address_from_output(output['data'])
-
+            recipient_address = get_address_from_output(output['data'])
         else:
-                print "no data in output: " + str(id)
-                print output
-                recipient_address = None
+            print "no data in output: " + str(id)
+            print output
+            recipient_address = None
 
         entry = address_to_utxo.find_one({"address": recipient_address})
+
         try:
             entry['utxos'].remove(output['id'])
             address_to_utxo.save(entry)
@@ -117,9 +136,9 @@ def spend_utxo(id):
 
         print "Spending UTXO: " + id
         utxo_index.remove({"id": id})
+        '''
     else:
         print "UTXO still unspent: " + str(id)
-        #print id
 
 
 # -----------------------------------
@@ -190,12 +209,20 @@ def process_output(tx_data, tx_hash):
             #if this output is not already spent
             if check_input.count() == 0:
 
-                new_output = {}
-                new_output['id'] = id
-                new_output['data'] = output
+                check_output = utxo_index.find({"id": id}).limit(1)
 
-                print "inserting output: " + id
-                utxo_index.insert(new_output)
+                if check_output.count() == 0:
+
+                    new_output = {}
+                    new_output['id'] = id
+                    new_output['data'] = output
+
+                    print "inserting output: " + id
+                    utxo_index.insert(new_output)
+                else:
+                    print "already in index: " + id
+            else:
+                print "already spent: " + id
 
 
 # -----------------------------------
@@ -203,7 +230,7 @@ def process_block(block_num):
     ''' Processes DB data
     '''
 
-    print "Procesing block %d" % block_num
+    print "Processing block %d" % block_num
     block = blocks_index.find_one({'block_num': block_num})
 
     block_data = block['block_data']
@@ -217,8 +244,8 @@ def process_block(block_num):
 
             tx_data = tx['tx_data']
 
-            process_inputs(tx_data)
-            process_outputs(tx_data, tx_hash)
+            #process_input(tx_data)
+            process_output(tx_data, tx_hash)
 
 
 # -----------------------------------
@@ -241,23 +268,46 @@ def check_all_utxo():
 
 
 # -----------------------------------
+def create_address_to_utxo_index():
+
+
+    counter = 0
+
+    print "creating ..."
+
+    for utxo in utxo_index.find():
+
+        counter += 1
+
+        if counter % 100 == 0:
+            print counter
+
+        #if counter < skip_counter:
+        #    continue
+
+        #if counter == 1000:
+        #    exit(0)
+
+        add_utxo_to_address(utxo)
+
+# -----------------------------------
 def get_unspents(address):
 
     reply = {}
     reply['unspent_outputs'] = []
 
-    entry = address_to_utxo.find_one({"address": address})
+    for entry in address_to_utxo_temp.find({"address": address}):
+        
+        id = entry['utxo']
 
-    if entry is not None:
-        for id in entry['utxos']:
-            new_entry = {}
-            new_entry['txid'] = id.rsplit('_')[0]
-            new_entry['vout'] = id.rsplit('_')[1]
-            utxo = utxo_index.find_one({'id': id})
-
-            new_entry['scriptPubKey'] = utxo['data']['scriptPubKey']
-            new_entry['amount'] = utxo['data']['value']
-            reply['unspent_outputs'].append(new_entry)
+        new_entry = {}
+        new_entry['txid'] = id.rsplit('_')[0]
+        new_entry['vout'] = id.rsplit('_')[1]
+        utxo = utxo_index.find_one({'id': id})
+    
+        new_entry['scriptPubKey'] = utxo['data']['scriptPubKey']
+        new_entry['amount'] = utxo['data']['value']
+        reply['unspent_outputs'].append(new_entry)
 
     return reply
 
@@ -297,12 +347,29 @@ def create_address_to_keys_index():
 # -----------------------------------
 if __name__ == '__main__':
 
-    process_blocks_from_beginning()
-    #check_all_utxo()
-    #write_unspents()
-    #check_all_utxo()
-
-    #pprint(get_unspents('N6xwxpamTpbKn3QA8PfttVB9rRkKkHBcZy'))
-
+    #process_blocks_from_beginning()
+    check_all_utxo()
     #create_address_to_keys_index()
-    #check_all_utxo()
+    
+    #create_address_to_utxo_index()
+
+    '''
+    counter = 0 
+
+    for i in address_to_utxo_temp.find():
+
+        counter += 1
+
+        if counter % 100 == 0:
+            print counter 
+
+        check_utxo = address_to_utxo_temp.find({'address': i['address']})
+
+        if check_utxo.count() > 5:
+
+            result = get_unspents(i['address'])
+
+            print result
+            print '-' * 5 
+
+    '''
