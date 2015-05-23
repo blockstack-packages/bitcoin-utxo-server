@@ -31,7 +31,6 @@ tx_index = db.tx
 utxo_index = db.utxo
 inputs_index = db.inputs
 address_to_utxo = db.address_to_utxo
-address_to_utxo_temp = db.address_to_utxo_temp
 address_to_keys = db.address_to_keys
 
 blocks_index.ensure_index('block_num')
@@ -39,13 +38,9 @@ tx_index.ensure_index('tx_hash')
 utxo_index.ensure_index('id')
 inputs_index.ensure_index('id')
 address_to_utxo.ensure_index('address')
-address_to_utxo_temp.ensure_index('address')
+address_to_utxo.ensure_index('utxo')
 address_to_keys.ensure_index('address')
 
-import pylibmc
-
-from config import MEMCACHED_SERVERS
-mc = pylibmc.Client(MEMCACHED_SERVERS, binary=True)
 
 # -----------------------------------
 class DecimalEncoder(json.JSONEncoder):
@@ -73,6 +68,19 @@ def get_address_from_output(output):
 def add_utxo_to_address(output):
 
     id = output['id']
+
+    check_input = inputs_index.find({"id": id}).limit(1)
+
+    if check_input.count() != 0:
+        print "already spent: " + str(id)
+        return
+
+    check_entry = address_to_utxo.find({"utxo": id}).limit(1)
+
+    if check_entry.count() != 0:
+        print "already in index: " + str(id)
+        return
+
     output = output['data']
 
     output_value = output['value']
@@ -85,66 +93,43 @@ def add_utxo_to_address(output):
 
         entry['utxo'] = id
         entry['address'] = recipient_address
-        address_to_utxo_temp.insert(entry)
+        address_to_utxo.insert(entry)
+        #print entry
 
-        '''
-        check_address = mc.get(recipient_address)
-
-        if check_address is None:
-
-            #print "not found"
-
-            utxos = []
-            utxos.append(id)
-          
-            mc.set(recipient_address, utxos, 0)
-        else:
-
-            utxos = mc.get(recipient_address)
-
-            utxos.append(id)
-            mc.set(recipient_address, utxos, 0)
-        '''
 
 # -----------------------------------
 def spend_utxo(id):
 
-    input = inputs_index.find({"id": id}).limit(1)
+    check_input = inputs_index.find({"id": id}).limit(1)
 
-    print "processing: " + id
-
-    if input.count() != 0:
-
-        print "UTXO should be removed"
-
-        '''
-        output = utxo_index.find_one({"id": id})
-        if output is not None and 'data' in output:
-            recipient_address = get_address_from_output(output['data'])
-        else:
-            print "no data in output: " + str(id)
-            print output
-            recipient_address = None
-
-        entry = address_to_utxo.find_one({"address": recipient_address})
-
-        try:
-            entry['utxos'].remove(output['id'])
-            address_to_utxo.save(entry)
-        except:
-            print id + " not in address index"
-
-        print "Spending UTXO: " + id
-        utxo_index.remove({"id": id})
-        '''
+    if check_input.count() == 0:
+        #print "UTXO still unspent: " + str(id)
+        pass
     else:
-        print "UTXO still unspent: " + str(id)
+
+        utxo = utxo_index.find_one({"id": id})
+
+        if utxo is not None:
+            print "Spending UTXO: " + str(id)
+            utxo_index.remove(utxo)
+
+        entry = address_to_utxo.find_one({"utxo": id})
+
+        if entry is not None:
+            print "Spending UTXO (address index): " + str(id)
+            address_to_utxo.remove(entry)
 
 
 # -----------------------------------
 def save_block(block_num):
 
-    print "Procesing block %d" % block_num
+    check_block = blocks_index.find({"block_num": block_num}).limit(1)
+
+    if check_block.count() != 0:
+        print "Block already in index"
+        return
+
+    #print "Saving block %d" % block_num
     block = namecoind.getblockbycount(block_num)
 
     block_entry = {}
@@ -192,7 +177,12 @@ def process_input(tx_data):
                     new_input['id'] = id
 
                     print "inserting input: " + id
-                    inputs_index.insert(new_input)
+                    #inputs_index.insert(new_input)
+
+                else:
+                    print "input already in index: " + id
+
+                spend_utxo(id)
 
 
 # -----------------------------------
@@ -217,12 +207,14 @@ def process_output(tx_data, tx_hash):
                     new_output['id'] = id
                     new_output['data'] = output
 
-                    print "inserting output: " + id
-                    utxo_index.insert(new_output)
+                    print "inserting utxo: " + id
+                    #utxo_index.insert(new_output)
                 else:
-                    print "already in index: " + id
+                    #pass
+                    print "utxo already in index: " + id
             else:
-                print "already spent: " + id
+                #pass
+                print "utxo already spent: " + id
 
 
 # -----------------------------------
@@ -244,7 +236,7 @@ def process_block(block_num):
 
             tx_data = tx['tx_data']
 
-            #process_input(tx_data)
+            process_input(tx_data)
             process_output(tx_data, tx_hash)
 
 
@@ -252,24 +244,36 @@ def process_block(block_num):
 def process_blocks_from_beginning():
 
     #start_block_num, end_block_num = 1, namecoind.getblockcount()
-    start_block_num, end_block_num = 1, 228718
+    start_block_num, end_block_num = 228718, 231714
 
     for block_num in range(start_block_num, end_block_num + 1):
-        #save_block(block_num)
+        save_block(block_num)
         process_block(block_num)
+
+
+# -----------------------------------
+def process_new_block(block_num):
+
+    save_block(block_num)
+    process_block(block_num)
 
 
 # -----------------------------------
 def check_all_utxo():
 
+    counter = 0
+
     for utxo in utxo_index.find():
 
         spend_utxo(utxo['id'])
+        counter += 1
+
+        if counter % 100 == 0:
+            print counter
 
 
 # -----------------------------------
 def create_address_to_utxo_index():
-
 
     counter = 0
 
@@ -285,7 +289,7 @@ def create_address_to_utxo_index():
         #if counter < skip_counter:
         #    continue
 
-        #if counter == 1000:
+        #if counter == 100:
         #    exit(0)
 
         add_utxo_to_address(utxo)
@@ -296,7 +300,7 @@ def get_unspents(address):
     reply = {}
     reply['unspent_outputs'] = []
 
-    for entry in address_to_utxo_temp.find({"address": address}):
+    for entry in address_to_utxo.find({"address": address}):
         
         id = entry['utxo']
 
@@ -352,24 +356,76 @@ if __name__ == '__main__':
     #create_address_to_keys_index()
     
     #create_address_to_utxo_index()
+    #exit(0)
 
+    #228718
+    #for block in blocks_index.find():
+    #    print block['block_num'] 
+
+    #process_new_block(228722)
+
+    print "utxo:\t", utxo_index.find().count()
+    print "inputs:\t", inputs_index.find().count()
+    print "tx:\t", tx_index.find().count()
+   
+    '''
+    counter = 0
+
+    for tx in tx_index.find():
+        process_input(tx['tx_data'])
+        process_output(tx['tx_data'], tx['tx_hash'])
+
+        counter += 1
+
+        if counter % 100 == 0:
+            print counter
+
+    '''
+
+    '''
+    address = 'NBSffD6N6sABDxNooLZxL26jwGetiFHN6H'
+
+    from pprint import pprint
+    info = get_unspents(address)
+    sum = 0
+    for i in info['unspent_outputs']:
+        sum += i['amount']
+
+    print sum
+
+    exit(0)
+    '''
+
+    '''
+    counter = 0
+
+    for utxo in utxo_index.find():
+        add_utxo_to_address(utxo)
+
+        counter += 1
+
+        if counter % 100 == 0:
+            print counter
+    
+    '''
     '''
     counter = 0 
 
-    for i in address_to_utxo_temp.find():
+    for i in address_to_utxo.find():
 
         counter += 1
 
         if counter % 100 == 0:
             print counter 
 
-        check_utxo = address_to_utxo_temp.find({'address': i['address']})
+        check_utxo = address_to_utxo.find({'address': i['address']})
 
         if check_utxo.count() > 5:
 
+            print i['address']
+
             result = get_unspents(i['address'])
 
-            print result
-            print '-' * 5 
-
+            #print result
+            #print '-' * 5 
     '''
