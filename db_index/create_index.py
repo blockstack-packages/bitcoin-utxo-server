@@ -19,6 +19,8 @@ from commontools import pretty_print
 
 from pymongo import MongoClient
 
+from time import sleep
+
 # ------------------------------------
 
 from config import INDEX_DB_URI
@@ -111,13 +113,13 @@ def spend_utxo(id):
 
         if utxo is not None:
             print "Spending UTXO: " + str(id)
-            utxo_index.remove(utxo)
+            utxo_index.remove({"id": id})
 
         entry = address_to_utxo.find_one({"utxo": id})
 
         if entry is not None:
             print "Spending UTXO (address index): " + str(id)
-            address_to_utxo.remove(entry)
+            address_to_utxo.remove({"utxo": id})
 
 
 # -----------------------------------
@@ -241,21 +243,22 @@ def process_block(block_num):
 
 
 # -----------------------------------
-def process_blocks_from_beginning():
+def process_blocks(start_block, end_block):
 
     #start_block_num, end_block_num = 1, namecoind.getblockcount()
-    start_block_num, end_block_num = 228718, 231714
+    #start_block_num, end_block_num = 228718, 231714
 
-    for block_num in range(start_block_num, end_block_num + 1):
-        save_block(block_num)
-        process_block(block_num)
+    for block_num in range(start_block, end_block + 1):
+        print "Processing block: ", block_num
+        #save_block(block_num)
+        #process_block(block_num)
 
 
 # -----------------------------------
 def process_new_block(block_num):
-
-    save_block(block_num)
-    process_block(block_num)
+    print "Processing block: ", block_num
+    #save_block(block_num)
+    #process_block(block_num)
 
 
 # -----------------------------------
@@ -294,6 +297,7 @@ def create_address_to_utxo_index():
 
         add_utxo_to_address(utxo)
 
+
 # -----------------------------------
 def get_unspents(address):
 
@@ -301,14 +305,14 @@ def get_unspents(address):
     reply['unspent_outputs'] = []
 
     for entry in address_to_utxo.find({"address": address}):
-        
+
         id = entry['utxo']
 
         new_entry = {}
         new_entry['txid'] = id.rsplit('_')[0]
         new_entry['vout'] = id.rsplit('_')[1]
         utxo = utxo_index.find_one({'id': id})
-    
+
         new_entry['scriptPubKey'] = utxo['data']['scriptPubKey']
         new_entry['amount'] = utxo['data']['value']
         reply['unspent_outputs'].append(new_entry)
@@ -349,37 +353,42 @@ def create_address_to_keys_index():
 
 
 # -----------------------------------
+def sync_with_blockchain(old_block):
+
+    new_block = namecoind.blocks()
+
+    print "last processed block: %s" % old_block
+
+    while(1):
+
+        while(old_block == new_block):
+            sleep(30)
+            new_block = namecoind.blocks()
+
+        print 'current block: %s' % new_block
+
+        for block_num in range(old_block + 1, new_block + 1):
+            process_new_block(block_num)
+
+        old_block = new_block
+
+# -----------------------------------
 if __name__ == '__main__':
 
-    #process_blocks_from_beginning()
-    check_all_utxo()
+    #process_blocks(0,100)
+    #check_all_utxo()
     #create_address_to_keys_index()
-    
     #create_address_to_utxo_index()
     #exit(0)
 
-    #228718
-    #for block in blocks_index.find():
-    #    print block['block_num'] 
-
     #process_new_block(228722)
 
+    sync_with_blockchain(231893)
+
+    '''
     print "utxo:\t", utxo_index.find().count()
     print "inputs:\t", inputs_index.find().count()
     print "tx:\t", tx_index.find().count()
-   
-    '''
-    counter = 0
-
-    for tx in tx_index.find():
-        process_input(tx['tx_data'])
-        process_output(tx['tx_data'], tx['tx_hash'])
-
-        counter += 1
-
-        if counter % 100 == 0:
-            print counter
-
     '''
 
     '''
@@ -394,38 +403,4 @@ if __name__ == '__main__':
     print sum
 
     exit(0)
-    '''
-
-    '''
-    counter = 0
-
-    for utxo in utxo_index.find():
-        add_utxo_to_address(utxo)
-
-        counter += 1
-
-        if counter % 100 == 0:
-            print counter
-    
-    '''
-    '''
-    counter = 0 
-
-    for i in address_to_utxo.find():
-
-        counter += 1
-
-        if counter % 100 == 0:
-            print counter 
-
-        check_utxo = address_to_utxo.find({'address': i['address']})
-
-        if check_utxo.count() > 5:
-
-            print i['address']
-
-            result = get_unspents(i['address'])
-
-            #print result
-            #print '-' * 5 
     '''
