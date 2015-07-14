@@ -27,12 +27,16 @@ def decimal_default(obj):
     raise TypeError
 
 #-----------------------------------------
-def save_to_mongo(data):
-	data = json.loads(json.dumps(data, default=decimal_default))  #to fix Decimal is not JSON serializable
+def save_to_mongo(transaction, block_num, tx_hash):
+	transaction = json.loads(json.dumps(transaction, default=decimal_default))  #to fix Decimal is not JSON serializable
+	data = {}
+	data['block'] = block_num
+	data['tx_hash'] = tx_hash
+	data['transaction'] = transaction
 	transactions.insert(data)
 
 #-----------------------------------------
-def process_transaction(tx_hash):
+def process_transaction(tx_hash, block_num):
 	
 	# tx_hash = '2077f4b64dcbd86e655724f5308093f84722b667ad3c3a9264a3fab538fbca30'
 	data = get_tx(bitcoind, tx_hash)
@@ -50,7 +54,7 @@ def process_transaction(tx_hash):
 	       	
 	        if output_asm[0:9] == 'OP_RETURN' and output_hex:
 	        	print "Saving OP_RETURN transaction to mongodb"
-	    		save_to_mongo(data)
+	    		save_to_mongo(data, block_num, tx_hash)
 
 #-----------------------------------------
 def process_block(block_num):
@@ -64,7 +68,7 @@ def process_block(block_num):
 		print "Found %d transactions" % len(tx_hashes)
 		for tx_hash in tx_hashes:
 			print "Transaction ID: " + tx_hash
-			process_transaction(tx_hash)
+			process_transaction(tx_hash, block_num)
 			print "# ----------------------------"
 			break
 		print "\n\n"
