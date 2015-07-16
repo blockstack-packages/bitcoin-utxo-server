@@ -2,7 +2,6 @@ import json
 from flask import Flask, jsonify
 from bson import json_util, ObjectId
 from pymongo import Connection
-from config import *
 
 app = Flask(__name__)
 
