@@ -3,3 +3,8 @@ BITCOIND_PORT = '8332'
 BITCOIND_USER = 'openname'
 BITCOIND_PASSWD = 'opennamesystem'
 BITCOIND_PROTOCOL = 'https'
+
+DEBUG = True
+
+DEFAULT_PORT = 5000
+DEFAULT_HOST = '0.0.0.0'
