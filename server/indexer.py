@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+"""
+    :copyright: (c) 2015 by Blockstack.org
+    :license: MIT, see LICENSE for more details.
+"""
+
 import json
 from flask import Flask, jsonify
 from bson import json_util, ObjectId
