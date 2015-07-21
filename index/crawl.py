@@ -1,11 +1,23 @@
+# -*- coding: utf-8 -*-
+"""
+    :copyright: (c) 2015 by Blockstack.org
+    :license: MIT, see LICENSE for more details.
+"""
+
 import json
 import decimal
-from bitcoinrpc.authproxy import AuthServiceProxy
 from pymongo import MongoClient
-from config import *
 
-authproxy_config_uri = '%s://%s:%s@%s:%s' % (BITCOIND_PROTOCOL, BITCOIND_USER, BITCOIND_PASSWD, BITCOIND_SERVER, BITCOIND_PORT)
-bitcoind = AuthServiceProxy(authproxy_config_uri)
+from pybitcoin.rpc import BitcoindClient
+
+from config import BITCOIND_SERVER, BITCOIND_PORT
+from config import BITCOIND_USER, BITCOIND_PASSWD
+from config import BITCOIND_USE_HTTPS
+from config import FIRST_BLOCK_MAINNET
+
+bitcoind = BitcoindClient(BITCOIND_SERVER, BITCOIND_PORT,
+                         BITCOIND_USER, BITCOIND_PASSWD,
+                         BITCOIND_USE_HTTPS)
 
 con = MongoClient()
 db = con['bitcoin']
@@ -37,7 +49,7 @@ def save_to_mongo(transaction, block_num, tx_hash):
 
 
 def process_transaction(tx_hash, block_num):
-    # tx_hash = '2077f4b64dcbd86e655724f5308093f84722b667ad3c3a9264a3fab538fbca30'
+
     data = get_tx(bitcoind, tx_hash)
     if data is None:
         return
@@ -46,19 +58,17 @@ def process_transaction(tx_hash, block_num):
         outputs = data['vout']
         for output in outputs:
             output_script = output['scriptPubKey']
+
             output_type = output_script.get('type')
             output_asm = output_script.get('asm')
-            output_hex = output_script.get('hex')
-            output_addresses = output_script.get('addresses')
 
-            if output_asm[0:9] == 'OP_RETURN' and output_hex:
-                print "Saving OP_RETURN transaction to mongodb"
+            if output_asm[0:9] == 'OP_RETURN' and output_type == "nulldata":
+                print "Saving OP_RETURN transaction"
                 save_to_mongo(data, block_num, tx_hash)
 
 
 def process_block(block_num):
 
-    # block_hash = bitcoind.getblockhash(364899)
     block_hash = bitcoind.getblockhash(block_num)
     block_data = bitcoind.getblock(block_hash)
 
@@ -66,15 +76,14 @@ def process_block(block_num):
         tx_hashes = block_data['tx']
         print "Found %d transactions" % len(tx_hashes)
         for tx_hash in tx_hashes:
-            print "Transaction ID: " + tx_hash
+            #print "Transaction ID: " + tx_hash
             process_transaction(tx_hash, block_num)
-            print "# ----------------------------"
-            break
-        print "\n\n"
+        print "# ----------------------------"
 
-start_block_num, end_block_num = 1, bitcoind.getblockcount()
-# start_block_num, end_block_num = 364899, 364899
+if __name__ == '__main__':
+    start_block_num, end_block_num = FIRST_BLOCK_MAINNET, bitcoind.getblockcount()
+    #start_block_num, end_block_num = 364899, 364899
 
-for block_num in range(start_block_num, end_block_num + 1):
-    print "Procesing block %d" % block_num
-    process_block(block_num)
+    for block_num in range(start_block_num, end_block_num + 1):
+        print "Procesing block %d" % block_num
+        process_block(block_num)
