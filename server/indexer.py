@@ -22,7 +22,7 @@ def index():
 
 
 @app.route("/blocks/<block_num>")
-def blocks(block_num):
+def get_block(block_num):
 
     block_num = int(block_num)
     items = transactions.find({'block': block_num})
@@ -33,12 +33,21 @@ def blocks(block_num):
     transaction = []
     for item in items:
         item = json.loads(json_util.dumps(item))
-        transaction.append(item)
+        transaction.append(item['tx_hash'])
 
     return jsonify({'transactions': transaction})
 
 
-# run the app...
+@app.route("/tx/<tx_hash>")
+def get_transaction(tx_hash):
+
+    tx = transactions.find_one({'tx_hash': tx_hash})
+
+    if tx is None:
+        return "Transaction not in index of OP_RETURN transactions"
+
+    return jsonify({'transaction': tx['transaction']})
+
 
 if __name__ == '__main__':
     app.run(debug=True)
