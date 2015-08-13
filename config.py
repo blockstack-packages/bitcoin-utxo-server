@@ -24,7 +24,7 @@ BITCOIND_SERVER = 'btcd.onename.com'
 BITCOIND_PORT = '8332'
 BITCOIND_USER = 'openname'
 BITCOIND_PASSWD = 'opennamesystem'
-#BITCOIND_PROTOCOL = 'https'
+BITCOIND_PROTOCOL = 'https'
 BITCOIND_USE_HTTPS = True
 
 DEBUG = True
