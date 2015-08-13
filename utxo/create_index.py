@@ -22,27 +22,26 @@ This file is part of Indexer.
     along with Indexer. If not, see <http://www.gnu.org/licenses/>.
 """
 
-from coinrpc import NamecoindServer
 import json
 import decimal
-
-from config import NAMECOIND_SERVER, NAMECOIND_PORT, NAMECOIND_USER, NAMECOIND_PASSWD, USE_HTTPS
-
-namecoind = NamecoindServer(NAMECOIND_SERVER, NAMECOIND_PORT, NAMECOIND_USER, NAMECOIND_PASSWD, USE_HTTPS)
-
+from bitcoinrpc.authproxy import AuthServiceProxy
+from pymongo import Connection
+from config import *
+import decimal
 from pprint import pprint
-
 from commontools import pretty_print
-
 from pymongo import MongoClient
-
 from time import sleep
+
+authproxy_config_uri = '%s://%s:%s@%s:%s' % (BITCOIND_PROTOCOL, BITCOIND_USER, BITCOIND_PASSWD, BITCOIND_SERVER, BITCOIND_PORT)
+bitcoind = AuthServiceProxy(authproxy_config_uri)
 
 # ------------------------------------
 
-from config import INDEX_DB_URI
+# from config import INDEX_DB_URI
+INDEX_DB_URI = "localhost:27017"
 
-db = MongoClient(INDEX_DB_URI)['namecoin_index']
+db = MongoClient(INDEX_DB_URI)['bitcoin_index']
 blocks_index = db.blocks
 tx_index = db.tx
 
@@ -149,7 +148,10 @@ def save_block(block_num):
         return
 
     #print "Saving block %d" % block_num
-    block = namecoind.getblockbycount(block_num)
+    # block = bitcoind.getblockbycount(block_num)
+
+    block_hash = bitcoind.getblockhash(block_num)
+    block = bitcoind.getblock(block_hash)
 
     block_entry = {}
 
@@ -166,8 +168,8 @@ def save_block(block_num):
         for tx in txs:
             #print "Transaction ID: " + tx
 
-            raw_tx = namecoind.getrawtransaction(tx)
-            tx_data = namecoind.decoderawtransaction(raw_tx)
+            raw_tx = bitcoind.getrawtransaction(tx)
+            tx_data = bitcoind.decoderawtransaction(raw_tx)
 
             tx_entry = {}
             tx_entry['tx_hash'] = str(tx)
@@ -262,20 +264,17 @@ def process_block(block_num):
 # -----------------------------------
 def process_blocks(start_block, end_block):
 
-    #start_block_num, end_block_num = 1, namecoind.getblockcount()
-    #start_block_num, end_block_num = 228718, 231714
-
     for block_num in range(start_block, end_block + 1):
         print "Processing block: ", block_num
-        #save_block(block_num)
-        #process_block(block_num)
+        save_block(block_num)
+        process_block(block_num)
 
 
 # -----------------------------------
 def process_new_block(block_num):
     print "Processing block: ", block_num
     #save_block(block_num)
-    #process_block(block_num)
+    process_block(block_num)
 
 
 # -----------------------------------
@@ -336,43 +335,10 @@ def get_unspents(address):
 
     return reply
 
-
-# -----------------------------------
-def create_address_to_keys_index():
-
-    reply = namecoind.name_filter('u/')
-
-    for user in reply:
-
-        key = user['name']
-        data = namecoind.name_show(user['name'])
-
-        owner_address = data['address']
-
-        print key
-        print owner_address
-        print '-' * 5
-
-        exist = address_to_keys.find_one({'address': owner_address})
-
-        if exist is None:
-            entry = {}
-            entry['address'] = owner_address
-            keys = []
-            keys.append(user['name'])
-            entry['keys'] = keys
-            address_to_keys.insert(entry)
-        else:
-            entry = exist
-            if key not in entry['keys']:
-                entry['keys'].append(key)
-            address_to_keys.save(entry)
-
-
 # -----------------------------------
 def sync_with_blockchain(old_block):
 
-    new_block = namecoind.blocks()
+    new_block = bitcoind.getblockcount()
 
     print "last processed block: %s" % old_block
 
@@ -380,7 +346,7 @@ def sync_with_blockchain(old_block):
 
         while(old_block == new_block):
             sleep(30)
-            new_block = namecoind.blocks()
+            new_block = bitcoind.getblockcount()
 
         print 'current block: %s' % new_block
 
@@ -390,17 +356,21 @@ def sync_with_blockchain(old_block):
         old_block = new_block
 
 # -----------------------------------
+
 if __name__ == '__main__':
 
-    #process_blocks(0,100)
-    #check_all_utxo()
-    #create_address_to_keys_index()
-    #create_address_to_utxo_index()
-    #exit(0)
+    process_blocks(1, 100)
+
+    # process_blocks(0,100)
+    check_all_utxo()
+    # create_address_to_keys_index()
+    create_address_to_utxo_index()
+    exit(0)
 
     #process_new_block(228722)
 
-    sync_with_blockchain(231893)
+    # sync_with_blockchain(231893)
+
 
     '''
     print "utxo:\t", utxo_index.find().count()

@@ -23,8 +23,11 @@ This file is part of Indexer.
 
 import os
 
-from config_local import NAMECOIND_SERVER, NAMECOIND_PORT
-from config_local import NAMECOIND_USER, NAMECOIND_PASSWD, USE_HTTPS
+BITCOIND_SERVER = 'btcd.onename.com'
+BITCOIND_PORT = '8332'
+BITCOIND_USER = 'openname'
+BITCOIND_PASSWD = 'opennamesystem'
+BITCOIND_PROTOCOL = 'https'
 
 try:
     INDEX_DB_URI = os.environ['INDEX_DB_URI']
